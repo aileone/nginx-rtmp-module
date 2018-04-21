@@ -1,5 +1,5 @@
 # NGINX-based Media Streaming Server
-## nginx-rtmp-module
+## nginx-rtmp-module (add hevc support for rtmp and hls)
 
 
 ### Project blog
