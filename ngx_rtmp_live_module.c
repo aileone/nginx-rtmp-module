@@ -831,8 +831,7 @@ ngx_rtmp_live_av(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
                 coheader = codec_ctx->aac_header;
             }
 
-            if (codec_ctx->video_codec_id == NGX_RTMP_VIDEO_H264 &&
-                ngx_rtmp_is_codec_header(in))
+            if ((codec_ctx->video_codec_id == NGX_RTMP_VIDEO_H264 || codec_ctx->video_codec_id == NGX_RTMP_VIDEO_H265) && ngx_rtmp_is_codec_header(in))
             {
                 prio = 0;
                 mandatory = 1;

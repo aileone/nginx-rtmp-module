@@ -21,6 +21,7 @@ typedef struct {
     u_char      buf[16];
     u_char      iv[16];
     AES_KEY     key;
+    unsigned    video_codec_id;
 } ngx_rtmp_mpegts_file_t;
 
 

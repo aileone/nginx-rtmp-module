@@ -162,6 +162,12 @@ typedef struct {
 #define NGX_RTMP_MAX_CHUNK_HEADER       18
 
 
+// add by adwpc for hevc support
+#define NGX_RTMP_VIDEOTAG_CODECID_AVC   7
+#define NGX_RTMP_VIDEOTAG_CODECID_HEVC  12
+
+
+
 typedef struct {
     uint32_t                csid;       /* chunk stream id */
     uint32_t                timestamp;  /* timestamp (delta) */

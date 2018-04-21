@@ -30,10 +30,14 @@ static void ngx_rtmp_codec_parse_aac_header(ngx_rtmp_session_t *s,
        ngx_chain_t *in);
 static void ngx_rtmp_codec_parse_avc_header(ngx_rtmp_session_t *s,
        ngx_chain_t *in);
+
+static void ngx_rtmp_codec_parse_hevc_header(ngx_rtmp_session_t *s,
+       ngx_chain_t *in);
 #if (NGX_DEBUG)
 static void ngx_rtmp_codec_dump_header(ngx_rtmp_session_t *s, const char *type,
        ngx_chain_t *in);
 #endif
+
 
 
 typedef struct {
@@ -122,6 +126,11 @@ video_codecs[] = {
     "On2-VP6-Alpha",
     "ScreenVideo2",
     "H264",
+    "",
+    "",
+    "",
+    "",
+    "H265",
 };
 
 
@@ -218,6 +227,7 @@ ngx_rtmp_codec_av(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
 
     fmt =  in->buf->pos[0];
     if (h->type == NGX_RTMP_MSG_AUDIO) {
+        // parse AudioTagHeader
         ctx->audio_codec_id = (fmt & 0xf0) >> 4;
         ctx->audio_channels = (fmt & 0x01) + 1;
         ctx->sample_size = (fmt & 0x02) ? 2 : 1;
@@ -226,6 +236,7 @@ ngx_rtmp_codec_av(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
             ctx->sample_rate = sample_rates[(fmt & 0x0c) >> 2];
         }
     } else {
+        // parse VideoTagHeader avc=7 hevc=12
         ctx->video_codec_id = (fmt & 0x0f);
     }
 
@@ -252,6 +263,11 @@ ngx_rtmp_codec_av(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
             header = &ctx->avc_header;
             ngx_rtmp_codec_parse_avc_header(s, in);
         }
+        if (ctx->video_codec_id == NGX_RTMP_VIDEO_H265) {
+            header = &ctx->avc_header;
+            ngx_rtmp_codec_parse_hevc_header(s, in);
+        }
+ 
     }
 
     if (header == NULL) {
@@ -531,6 +547,97 @@ ngx_rtmp_codec_parse_avc_header(ngx_rtmp_session_t *s, ngx_chain_t *in)
                    ctx->avc_nal_bytes, ctx->avc_ref_frames,
                    ctx->width, ctx->height);
 }
+
+
+//add by adwpc for hevc
+static void
+ngx_rtmp_codec_parse_hevc_header(ngx_rtmp_session_t *s, ngx_chain_t *in)
+{
+    ngx_uint_t              profile_idc, width, height ;
+    ngx_uint_t              i, j, narrs, nal_type, nnal, nnall;
+    ngx_rtmp_codec_ctx_t   *ctx;
+    ngx_rtmp_bit_reader_t   br;
+
+#if (NGX_DEBUG)
+    ngx_rtmp_hex_dump(s->connection->log, "ngx_rtmp_codec_parse_hevc_header", in->buf->start, in->buf->end);
+    ngx_rtmp_codec_dump_header(s, "ngx_rtmp_codec_parse_hevc_header in:", in);
+#endif
+    // HEVCDecoderConfigurationRecord
+    // http://ffmpeg.org/doxygen/trunk/hevc_8c_source.html#l00040
+
+    ctx = ngx_rtmp_get_module_ctx(s, ngx_rtmp_codec_module);
+
+    ngx_rtmp_bit_init_reader(&br, in->buf->pos, in->buf->last);
+
+    //skip tag header and configurationVersion(1 byte)
+    ngx_rtmp_bit_read(&br, 48);
+
+    /* unsigned int(2) general_profile_space; */
+    /* unsigned int(1) general_tier_flag; */
+    /* unsigned int(5) general_profile_idc; */
+    ctx->avc_profile = (ngx_uint_t) ((ngx_rtmp_bit_read_8(&br) & 0x1f) >> 5);
+
+    //unsigned int(32) general_profile_compatibility_flags;
+    ctx->avc_compat = (ngx_uint_t) ngx_rtmp_bit_read_32(&br);
+    //unsigned int(48) general_constraint_indicator_flags;
+    ngx_rtmp_bit_read(&br, 48);
+    //unsigned int(8) general_level_idc; 
+    ctx->avc_level = (ngx_uint_t) ngx_rtmp_bit_read_8(&br);
+
+    /* bit(4) reserved = ‘1111’b; */
+    /* unsigned int(12) min_spatial_segmentation_idc; */
+    /* bit(6) reserved = ‘111111’b; */
+    /* unsigned int(2) parallelismType; */
+    /* bit(6) reserved = ‘111111’b; */
+    /* unsigned int(2) chroma_format_idc; */
+    /* bit(5) reserved = ‘11111’b; */
+    /* unsigned int(3) bit_depth_luma_minus8; */
+    /* bit(5) reserved = ‘11111’b; */
+    /* unsigned int(3) bit_depth_chroma_minus8; */
+    ngx_rtmp_bit_read(&br, 48);
+
+    /* bit(16) avgFrameRate; */
+    ctx->frame_rate = (ngx_uint_t) ngx_rtmp_bit_read_16(&br);
+
+    /* bit(2) constantFrameRate; */
+    ctx->avc_ref_frames = (ngx_uint_t) ngx_rtmp_bit_read(&br, 2);
+    /* bit(3) numTemporalLayers; */
+    /* bit(1) temporalIdNested; */
+    ngx_rtmp_bit_read(&br, 4);
+
+    /* unsigned int(2) lengthSizeMinusOne; */
+    ctx->avc_nal_bytes = (ngx_uint_t)ngx_rtmp_bit_read(&br, 2) + 1;
+    ngx_log_debug1(NGX_LOG_DEBUG_RTMP, s->connection->log, 0, "codec: hevc h265 ctx->avc_nal_bytes=%ui", ctx->avc_nal_bytes);
+
+    /* unsigned int(8) numOfArrays; 04 */
+    narrs = (ngx_uint_t)ngx_rtmp_bit_read_8(&br);
+    ngx_log_debug1(NGX_LOG_DEBUG_RTMP, s->connection->log, 0, "codec: hevc header narrs=%ui ", narrs);
+
+    //parse vps sps pps ..
+    for ( j = 0; j < narrs; j++) {
+        //bit(1) array_completeness;
+        nal_type = (ngx_uint_t)ngx_rtmp_bit_read_8(&br) & 0x3f;
+        nnal = (ngx_uint_t)ngx_rtmp_bit_read_16(&br);
+        ngx_log_debug2(NGX_LOG_DEBUG_RTMP, s->connection->log, 0, "codec: hevc nal_type=%ui nnal=%ui", nal_type, nnal);
+        for (i = 0; i < nnal; i++) {
+            nnall = (ngx_uint_t)ngx_rtmp_bit_read_16(&br);
+            ngx_rtmp_bit_read(&br, nnall*8);
+            ngx_log_debug1(NGX_LOG_DEBUG_RTMP, s->connection->log, 0, "codec: hevc nnall=%ui",  nnall);
+            //vps-32 sps-33 pps-34
+        }
+    }
+
+
+    /* todo ctx->avc_ref_frames =  and so on*/
+    ngx_log_debug8(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                   "codec: hevc header "
+                   "profile=%ui, compat=%ui, level=%ui, "
+                   "nal_bytes=%ui, ref_frames=%ui, frame_rate=%ui, width=%ui, height=%ui",
+                   ctx->avc_profile, ctx->avc_compat, ctx->avc_level,
+                   ctx->avc_nal_bytes, ctx->avc_ref_frames, ctx->frame_rate,
+                   ctx->width, ctx->height);
+}
+
 
 
 #if (NGX_DEBUG)

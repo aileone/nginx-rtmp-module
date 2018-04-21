@@ -41,7 +41,8 @@ enum {
     NGX_RTMP_VIDEO_ON2_VP6          = 4,
     NGX_RTMP_VIDEO_ON2_VP6_ALPHA    = 5,
     NGX_RTMP_VIDEO_SCREEN2          = 6,
-    NGX_RTMP_VIDEO_H264             = 7
+    NGX_RTMP_VIDEO_H264             = 7,
+    NGX_RTMP_VIDEO_H265             = 12
 };
 
 

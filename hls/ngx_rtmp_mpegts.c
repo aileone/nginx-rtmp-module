@@ -7,6 +7,8 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include "ngx_rtmp_mpegts.h"
+#include "ngx_rtmp_bitop.h"
+#include "ngx_rtmp.h"
 
 
 static u_char ngx_rtmp_mpegts_header[] = {
@@ -15,10 +17,13 @@ static u_char ngx_rtmp_mpegts_header[] = {
     0x47, 0x40, 0x00, 0x10, 0x00,
     /* PSI */
     0x00, 0xb0, 0x0d, 0x00, 0x01, 0xc1, 0x00, 0x00,
-    /* PAT */
-    0x00, 0x01, 0xf0, 0x01,
-    /* CRC */
-    0x2e, 0x70, 0x19, 0x05,
+
+    /* 0x00, 0x01, 0xf0, 0x01, */
+    /* 0x2e, 0x70, 0x19, 0x05, */
+
+    0x00, 0x01, 0xf0, 0x00,
+    0x2a, 0xb1, 0x04, 0xb2,
+
     /* stuffing 167 bytes */
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -39,18 +44,26 @@ static u_char ngx_rtmp_mpegts_header[] = {
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 
     /* TS */
-    0x47, 0x50, 0x01, 0x10, 0x00,
+    /* 0x47, 0x50, 0x01, 0x10, 0x00, */
+    0x47, 0x50, 0x00, 0x10, 0x00,
     /* PSI */
     0x02, 0xb0, 0x17, 0x00, 0x01, 0xc1, 0x00, 0x00,
-    /* PMT */
+   /* PMT */
     0xe1, 0x00,
     0xf0, 0x00,
     0x1b, 0xe1, 0x00, 0xf0, 0x00, /* h264 */
     0x0f, 0xe1, 0x01, 0xf0, 0x00, /* aac */
     /*0x03, 0xe1, 0x01, 0xf0, 0x00,*/ /* mp3 */
     /* CRC */
-    0x2f, 0x44, 0xb9, 0x9b, /* crc for aac */
-    /*0x4e, 0x59, 0x3d, 0x1e,*/ /* crc for mp3 */
+    /* crc for h264 aac */
+    0x2f, 0x44, 0xb9, 0x9b, 
+    
+    /* crc for h264 mp3 */
+    /* 0x4e, 0x59, 0x3d, 0x1e,  */
+
+    /* crc for h265 aac */
+    /* 0xc7, 0x72, 0xb7, 0xcb, */
+
     /* stuffing 157 bytes */
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -157,8 +170,25 @@ ngx_rtmp_mpegts_write_file(ngx_rtmp_mpegts_file_t *file, u_char *in,
 static ngx_int_t
 ngx_rtmp_mpegts_write_header(ngx_rtmp_mpegts_file_t *file)
 {
-    return ngx_rtmp_mpegts_write_file(file, ngx_rtmp_mpegts_header,
-                                      sizeof(ngx_rtmp_mpegts_header));
+    //tag codec id  hevc=12 avc=7
+    if(file->video_codec_id == NGX_RTMP_VIDEOTAG_CODECID_HEVC){
+        //hevc stream_type=0x24
+        ngx_rtmp_mpegts_header[205] = 0x24;
+        //crc for h265 and aac
+        ngx_rtmp_mpegts_header[215] = 0xc7;
+        ngx_rtmp_mpegts_header[216] = 0x72;
+        ngx_rtmp_mpegts_header[217] = 0xb7;
+        ngx_rtmp_mpegts_header[218] = 0xcb;
+    }else if(file->video_codec_id == NGX_RTMP_VIDEOTAG_CODECID_AVC){
+        //avc stream_type=0x1b
+        ngx_rtmp_mpegts_header[205] = 0x1b;
+        //crc for h264 and aac
+        ngx_rtmp_mpegts_header[215] = 0x2f;
+        ngx_rtmp_mpegts_header[216] = 0x44;
+        ngx_rtmp_mpegts_header[217] = 0xb9;
+        ngx_rtmp_mpegts_header[218] = 0x9b;
+    }
+    return ngx_rtmp_mpegts_write_file(file, ngx_rtmp_mpegts_header, sizeof(ngx_rtmp_mpegts_header));
 }
 
 
@@ -214,8 +244,7 @@ ngx_rtmp_mpegts_write_frame(ngx_rtmp_mpegts_file_t *file,
 
     while (b->pos < b->last) {
         p = packet;
-
-        f->cc++;
+        /* f->cc++; */
 
         *p++ = 0x47;
         *p++ = (u_char) (f->pid >> 8);
@@ -258,8 +287,12 @@ ngx_rtmp_mpegts_write_frame(ngx_rtmp_mpegts_file_t *file,
                 pes_size = 0;
             }
 
-            *p++ = (u_char) (pes_size >> 8);
-            *p++ = (u_char) pes_size;
+            /* *p++ = (u_char) (pes_size >> 8); */
+            /* *p++ = (u_char) pes_size; */
+
+            *p++ = 0x00;
+            *p++ = 0x00;
+          
             *p++ = 0x80; /* H222 */
             *p++ = (u_char) flags;
             *p++ = (u_char) header_size;
@@ -312,11 +345,15 @@ ngx_rtmp_mpegts_write_frame(ngx_rtmp_mpegts_file_t *file,
             ngx_memcpy(p, b->pos, in_size);
             b->pos = b->last;
         }
-
+        ngx_rtmp_hex_dump(file->log, "ngx_rtmp_mpegts_write_frame ts:", packet, packet+188);
+ 
         rc = ngx_rtmp_mpegts_write_file(file, packet, sizeof(packet));
         if (rc != NGX_OK) {
             return rc;
         }
+
+        //ffmpeg idr frame cc bgein from 0
+        f->cc++;
     }
 
     return NGX_OK;
