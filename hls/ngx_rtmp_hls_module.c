@@ -806,9 +806,8 @@ ngx_rtmp_hls_append_vps_sps_pps(ngx_rtmp_session_t *s, ngx_buf_t *out)
     u_char                         *p;
     ngx_chain_t                    *in;
     ngx_rtmp_hls_ctx_t             *ctx;
-    int8_t                          narrs, src_nal_type, nal_type;
+    int8_t                          narrs, src_nal_type;
     uint16_t                        len, rlen, nnals, rnnals;
-    ngx_int_t                       n;
 
     ctx = ngx_rtmp_get_module_ctx(s, ngx_rtmp_hls_module);
 
@@ -841,7 +840,6 @@ ngx_rtmp_hls_append_vps_sps_pps(ngx_rtmp_session_t *s, ngx_buf_t *out)
         if (ngx_rtmp_hls_copy(s, &src_nal_type, &p, 1, &in) != NGX_OK) {
             return NGX_ERROR;
         }
-        nal_type = src_nal_type & 0x3f;
 
         /* NAL nums*/
         if (ngx_rtmp_hls_copy(s, &rnnals, &p, 2, &in) != NGX_OK) {

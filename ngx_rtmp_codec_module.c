@@ -553,7 +553,6 @@ ngx_rtmp_codec_parse_avc_header(ngx_rtmp_session_t *s, ngx_chain_t *in)
 static void
 ngx_rtmp_codec_parse_hevc_header(ngx_rtmp_session_t *s, ngx_chain_t *in)
 {
-    ngx_uint_t              profile_idc, width, height ;
     ngx_uint_t              i, j, narrs, nal_type, nnal, nnall;
     ngx_rtmp_codec_ctx_t   *ctx;
     ngx_rtmp_bit_reader_t   br;
